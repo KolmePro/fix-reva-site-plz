@@ -72,8 +72,8 @@
         panel.id = 'vkplay-pins-panel';
         panel.style.cssText = `
             position: fixed !important;
-            left: 20px !important;
-            right: auto !important;
+            left: auto !important;
+            right: 20px !important;
             top: auto !important;
             bottom: 20px !important;
             display: flex !important;
