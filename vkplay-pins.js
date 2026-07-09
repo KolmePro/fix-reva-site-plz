@@ -43,15 +43,37 @@
         document.body.appendChild(popupHTML);
     }
 
-    // Добавляем кнопки внутрь контейнера
-    function addButtons(container) {
-        if (container.querySelector('#copy-pins-button')) return; // уже есть
+    function ensureButtonPanel() {
+        let panel = document.querySelector('#vkplay-pins-panel');
+        if (panel) return panel;
+
+        panel = document.createElement('div');
+        panel.id = 'vkplay-pins-panel';
+        panel.style.cssText = `
+            position: fixed;
+            left: 20px;
+            bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 10000;
+        `;
+        document.body.appendChild(panel);
+        return panel;
+    }
+
+    // Добавляем кнопки в фиксированную панель поверх страницы
+    function addButtons() {
+        if (document.querySelector('#copy-pins-button')) return; // уже есть
+
+        const panel = ensureButtonPanel();
         const copyBtn = document.createElement('button');
         copyBtn.id = 'copy-pins-button';
         copyBtn.innerText = 'Скопировать видимые ПИН-коды';
         copyBtn.style.cssText = `
             background: #7428ac; color: #fff; border: none; padding: 10px 20px;
-            border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px;
+            border-radius: 4px; cursor: pointer; font-size: 14px;
+            width: 260px; text-align: left;
         `;
         copyBtn.addEventListener('click', () => {
             console.log('[click] copy pins');
@@ -65,28 +87,29 @@
         openBtn.style.cssText = `
             background: #7428ac; color: #fff; border: none; padding: 10px 20px;
             border-radius: 4px; cursor: pointer; font-size: 14px;
+            width: 260px; text-align: left;
         `;
         openBtn.addEventListener('click', () => {
             console.log('[click] open all pins');
             document.querySelectorAll('.b-my-pin__get').forEach(btn => btn.click());
         });
 
-        const wrapper = document.createElement('div');
-        wrapper.style.marginBottom = '10px';
-        wrapper.appendChild(copyBtn);
-        wrapper.appendChild(openBtn);
-
-        container.prepend(wrapper);
+        panel.appendChild(copyBtn);
+        panel.appendChild(openBtn);
     }
 
-    // Отслеживаем появление контейнера
+    // Отслеживаем готовность страницы и возвращаем панель после SPA-перерисовок
     const observer = new MutationObserver(() => {
-        const container = document.querySelector('.b-game__container');
-        if (container) {
-            console.log('[observer] container found');
-            addButtons(container);
+        const hasPins = document.querySelector('.b-my-pin') || document.querySelector('.b-game__container');
+        if (hasPins) {
+            console.log('[observer] pin area found');
+            addButtons();
         }
     });
+
+    if (document.querySelector('.b-my-pin') || document.querySelector('.b-game__container')) {
+        addButtons();
+    }
 
     observer.observe(document.body, { childList: true, subtree: true });
 })();
