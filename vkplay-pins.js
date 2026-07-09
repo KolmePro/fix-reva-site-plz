@@ -3,7 +3,6 @@
 
     console.log('[VKPlay Pins Helper] loaded');
 
-    // Получаем видимые ПИН-коды
     function getUnusedPinCodes() {
         const pins = [];
         document.querySelectorAll('.b-my-pin').forEach(pin => {
@@ -14,16 +13,26 @@
         return pins;
     }
 
-    // Показываем попап
     function showPinCodesPopup(pinCodes) {
-        const popupHTML = document.createElement('div');
-        popupHTML.style.cssText = `
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: #1e1e1e; padding: 20px; border: 1px solid #444;
-            box-shadow: 0 0 10px rgba(0,0,0,0.5); z-index: 10000; border-radius: 8px;
-            max-width: 400px; width: 90%; text-align: center; color: #fff; font-family: Arial, sans-serif;
+        const popup = document.createElement('div');
+        popup.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1e1e1e;
+            padding: 20px;
+            border: 1px solid #444;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            z-index: 2147483647;
+            border-radius: 8px;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            color: #fff;
+            font-family: Arial, sans-serif;
         `;
-        popupHTML.innerHTML = `
+        popup.innerHTML = `
             <div style="margin-bottom: 15px;">
                 <h3 style="margin: 0;">Всего ПИН-кодов (${pinCodes.length})</h3>
             </div>
@@ -31,16 +40,28 @@
                 Скопируйте эти ПИН-коды и вставьте их в поле активации.
             </p>
             <textarea style="
-                width: 100%; height: 150px; resize: none; margin-bottom: 15px; padding: 10px;
-                border-radius: 4px; border: 1px solid #444; background: #2d2d2d; color: #fff;
+                width: 100%;
+                height: 150px;
+                resize: none;
+                margin-bottom: 15px;
+                padding: 10px;
+                border-radius: 4px;
+                border: 1px solid #444;
+                background: #2d2d2d;
+                color: #fff;
             ">${pinCodes.join('\n')}</textarea>
             <button style="
-                background: #7428ac; color: #fff; border: none; padding: 10px 20px;
-                border-radius: 4px; cursor: pointer; font-size: 14px;
+                background: #7428ac;
+                color: #fff;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
             ">Закрыть</button>
         `;
-        popupHTML.querySelector('button').addEventListener('click', () => popupHTML.remove());
-        document.body.appendChild(popupHTML);
+        popup.querySelector('button').addEventListener('click', () => popup.remove());
+        document.body.appendChild(popup);
     }
 
     function ensureButtonPanel() {
@@ -50,55 +71,109 @@
         panel = document.createElement('div');
         panel.id = 'vkplay-pins-panel';
         panel.style.cssText = `
-            position: fixed;
-            left: 20px;
-            bottom: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            z-index: 10000;
+            position: fixed !important;
+            left: 20px !important;
+            right: auto !important;
+            top: auto !important;
+            bottom: 20px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 10px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            z-index: 2147483647 !important;
         `;
         document.body.appendChild(panel);
         return panel;
     }
 
-    // Добавляем кнопки в фиксированную панель поверх страницы
-    function addButtons() {
-        if (document.querySelector('#copy-pins-button')) return; // уже есть
+    function applyButtonStyles(button) {
+        button.style.cssText = `
+            background: #7428ac !important;
+            color: #fff !important;
+            border: none !important;
+            padding: 10px 20px !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+            font-size: 14px !important;
+            width: 260px !important;
+            text-align: left !important;
+            margin: 0 !important;
+            position: static !important;
+        `;
+    }
+
+    function bindCopyButton(button) {
+        if (button.dataset.vkplayPinsBound === 'copy') return;
+        button.dataset.vkplayPinsBound = 'copy';
+        button.addEventListener('click', () => {
+            console.log('[click] copy pins');
+            showPinCodesPopup(getUnusedPinCodes());
+        });
+    }
+
+    function bindOpenButton(button) {
+        if (button.dataset.vkplayPinsBound === 'open') return;
+        button.dataset.vkplayPinsBound = 'open';
+        button.addEventListener('click', () => {
+            console.log('[click] open all pins');
+            document.querySelectorAll('.b-my-pin__get').forEach(btn => btn.click());
+        });
+    }
+
+    function removeEmptyLegacyWrappers() {
+        document.querySelectorAll('.b-game__container > div[style]').forEach(wrapper => {
+            if (wrapper.id === 'vkplay-pins-panel') return;
+            if (wrapper.querySelector('#copy-pins-button, #open-all-pins-button')) return;
+            if (wrapper.childElementCount === 0) wrapper.remove();
+        });
+    }
+
+    function migrateExistingButtons() {
+        const copyBtn = document.querySelector('#copy-pins-button');
+        const openBtn = document.querySelector('#open-all-pins-button');
+
+        if (!copyBtn && !openBtn) return false;
 
         const panel = ensureButtonPanel();
+
+        if (copyBtn) {
+            applyButtonStyles(copyBtn);
+            bindCopyButton(copyBtn);
+            if (copyBtn.parentElement !== panel) panel.appendChild(copyBtn);
+        }
+
+        if (openBtn) {
+            applyButtonStyles(openBtn);
+            bindOpenButton(openBtn);
+            if (openBtn.parentElement !== panel) panel.appendChild(openBtn);
+        }
+
+        removeEmptyLegacyWrappers();
+        return true;
+    }
+
+    function addButtons() {
+        if (migrateExistingButtons()) return;
+
+        const panel = ensureButtonPanel();
+
         const copyBtn = document.createElement('button');
         copyBtn.id = 'copy-pins-button';
         copyBtn.innerText = 'Скопировать видимые ПИН-коды';
-        copyBtn.style.cssText = `
-            background: #7428ac; color: #fff; border: none; padding: 10px 20px;
-            border-radius: 4px; cursor: pointer; font-size: 14px;
-            width: 260px; text-align: left;
-        `;
-        copyBtn.addEventListener('click', () => {
-            console.log('[click] copy pins');
-            const pins = getUnusedPinCodes();
-            showPinCodesPopup(pins);
-        });
+        applyButtonStyles(copyBtn);
+        bindCopyButton(copyBtn);
 
         const openBtn = document.createElement('button');
         openBtn.id = 'open-all-pins-button';
         openBtn.innerText = 'Открыть все ПИН-коды';
-        openBtn.style.cssText = `
-            background: #7428ac; color: #fff; border: none; padding: 10px 20px;
-            border-radius: 4px; cursor: pointer; font-size: 14px;
-            width: 260px; text-align: left;
-        `;
-        openBtn.addEventListener('click', () => {
-            console.log('[click] open all pins');
-            document.querySelectorAll('.b-my-pin__get').forEach(btn => btn.click());
-        });
+        applyButtonStyles(openBtn);
+        bindOpenButton(openBtn);
 
         panel.appendChild(copyBtn);
         panel.appendChild(openBtn);
     }
 
-    // Отслеживаем готовность страницы и возвращаем панель после SPA-перерисовок
     const observer = new MutationObserver(() => {
         const hasPins = document.querySelector('.b-my-pin') || document.querySelector('.b-game__container');
         if (hasPins) {
