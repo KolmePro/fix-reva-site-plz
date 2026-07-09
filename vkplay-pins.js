@@ -80,7 +80,11 @@
             flex-direction: column !important;
             gap: 10px !important;
             margin: 0 !important;
-            padding: 0 !important;
+            padding: 12px !important;
+            background: rgba(48, 48, 48, 0.92) !important;
+            border: 1px solid #6b6b6b !important;
+            border-radius: 8px !important;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35) !important;
             z-index: 2147483647 !important;
         `;
         document.body.appendChild(panel);
