@@ -161,6 +161,19 @@
         text.textContent = `${enabled ? '☑' : '☐'} Авто отправка`;
     }
 
+    function keepAutoTransferButtonActive(label) {
+        label.classList.remove('disabled');
+        label.style.setProperty('background', '#7428ac', 'important');
+        label.style.setProperty('opacity', '1', 'important');
+        label.style.setProperty('filter', 'none', 'important');
+
+        const text = label.querySelector('.btn__text');
+        if (text) {
+            text.style.setProperty('color', '#fff', 'important');
+            text.style.setProperty('opacity', '1', 'important');
+        }
+    }
+
     function hasSelectedValue(selector, placeholder) {
         const currentValue = document.querySelector(selector)?.textContent.trim();
         return Boolean(currentValue && currentValue.toLowerCase() !== placeholder);
@@ -211,6 +224,7 @@
         updateButtonText(text, automationEnabled);
 
         label.append(checkbox, text);
+        keepAutoTransferButtonActive(label);
 
         checkbox.addEventListener('change', () => {
             if (checkbox.checked && !hasSelectedTransferTarget()) {
@@ -229,6 +243,8 @@
 
     const observer = new MutationObserver(() => {
         addAutoTransferCheckbox();
+        const autoTransferButton = document.getElementById(AUTO_TRANSFER_PANEL_ID);
+        if (autoTransferButton) keepAutoTransferButtonActive(autoTransferButton);
         if (automationEnabled) scheduleTransferAttempt();
     });
 
