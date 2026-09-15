@@ -3,6 +3,7 @@
 
     const AUTO_TRANSFER_ID = 'violet-auto-transfer';
     const AUTO_TRANSFER_PANEL_ID = 'violet-auto-transfer-panel';
+    const AUTO_TRANSFER_HINT = 'Автоматическая отправка выполняется, когда в очереди накопится 6 предметов.';
     const REQUIRED_ITEM_COUNT = 6;
     const MODAL_TIMEOUT = 15000;
 
@@ -169,6 +170,7 @@
         const label = document.createElement('label');
         label.id = AUTO_TRANSFER_PANEL_ID;
         label.className = 'btn btn--sm';
+        label.title = AUTO_TRANSFER_HINT;
         label.style.cssText = `
             display: block !important;
             width: fit-content !important;
