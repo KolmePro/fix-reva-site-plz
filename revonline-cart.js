@@ -161,19 +161,6 @@
         text.textContent = `${enabled ? '☑' : '☐'} Авто отправка`;
     }
 
-    function keepAutoTransferButtonActive(label) {
-        label.classList.remove('disabled');
-        label.style.setProperty('background', '#7428ac', 'important');
-        label.style.setProperty('opacity', '1', 'important');
-        label.style.setProperty('filter', 'none', 'important');
-
-        const text = label.querySelector('.btn__text');
-        if (text) {
-            text.style.setProperty('color', '#fff', 'important');
-            text.style.setProperty('opacity', '1', 'important');
-        }
-    }
-
     function hasSelectedValue(selector, placeholder) {
         const currentValue = document.querySelector(selector)?.textContent.trim();
         return Boolean(currentValue && currentValue.toLowerCase() !== placeholder);
@@ -186,10 +173,16 @@
     }
 
     function addAutoTransferCheckbox() {
-        if (document.getElementById(AUTO_TRANSFER_PANEL_ID)) return;
-
         const transferContainer = findTransferContainer();
         if (!transferContainer) return;
+
+        const existingButton = document.getElementById(AUTO_TRANSFER_PANEL_ID);
+        if (existingButton) {
+            if (existingButton.previousElementSibling !== transferContainer) {
+                transferContainer.insertAdjacentElement('afterend', existingButton);
+            }
+            return;
+        }
 
         const label = document.createElement('label');
         label.id = AUTO_TRANSFER_PANEL_ID;
@@ -200,6 +193,8 @@
             width: fit-content !important;
             margin: 10px auto 0 !important;
             background: #7428ac !important;
+            opacity: 1 !important;
+            filter: none !important;
             cursor: pointer !important;
             user-select: none !important;
         `;
@@ -221,10 +216,11 @@
 
         const text = document.createElement('span');
         text.className = 'btn__text';
+        text.style.setProperty('color', '#fff', 'important');
+        text.style.setProperty('opacity', '1', 'important');
         updateButtonText(text, automationEnabled);
 
         label.append(checkbox, text);
-        keepAutoTransferButtonActive(label);
 
         checkbox.addEventListener('change', () => {
             if (checkbox.checked && !hasSelectedTransferTarget()) {
@@ -238,13 +234,11 @@
             updateButtonText(text, checkbox.checked);
         });
 
-        transferContainer.appendChild(label);
+        transferContainer.insertAdjacentElement('afterend', label);
     }
 
     const observer = new MutationObserver(() => {
         addAutoTransferCheckbox();
-        const autoTransferButton = document.getElementById(AUTO_TRANSFER_PANEL_ID);
-        if (autoTransferButton) keepAutoTransferButtonActive(autoTransferButton);
         if (automationEnabled) scheduleTransferAttempt();
     });
 
