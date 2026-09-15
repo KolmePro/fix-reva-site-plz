@@ -161,6 +161,17 @@
         text.textContent = `${enabled ? '☑' : '☐'} Авто отправка`;
     }
 
+    function hasSelectedValue(selector, placeholder) {
+        const currentValue = document.querySelector(selector)?.textContent.trim();
+        return Boolean(currentValue && currentValue.toLowerCase() !== placeholder);
+    }
+
+    function hasSelectedTransferTarget() {
+        const serverSelected = hasSelectedValue('.js-server-current', 'выберите сервер');
+        const characterSelected = hasSelectedValue('.js-char-current', 'выберите персонажа');
+        return serverSelected && characterSelected;
+    }
+
     function addAutoTransferCheckbox() {
         if (document.getElementById(AUTO_TRANSFER_PANEL_ID)) return;
 
@@ -202,6 +213,13 @@
         label.append(checkbox, text);
 
         checkbox.addEventListener('change', () => {
+            if (checkbox.checked && !hasSelectedTransferTarget()) {
+                checkbox.checked = false;
+                updateButtonText(text, false);
+                window.alert('Перед включением «Авто отправки» выберите сервер и персонажа.');
+                return;
+            }
+
             setAutomationEnabled(checkbox.checked);
             updateButtonText(text, checkbox.checked);
         });
