@@ -14,6 +14,9 @@ There is no build step, package manager, test runner, background worker, or opti
 - `revonline-cart.js`: automatic six-item transfers on RevOnline cart URLs matching `https://revonline.ru/cart*`.
 - `vkplay-pins.js`: PIN-code collection helpers on `https://market.vkplay.ru/*`.
 - `logo.png`: extension artwork; currently not referenced by the manifest.
+- `scripts/package-extension.ps1`: creates the minimal ZIP package uploaded to Chrome Web Store.
+- `scripts/publish-chrome-web-store.ps1`: validates API access, uploads a package, and submits it for automatic publishing after review.
+- `.github/workflows/chrome-web-store.yml`: validates, packages, and publishes tagged releases.
 
 ## Working conventions
 

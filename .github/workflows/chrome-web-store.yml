@@ -1,0 +1,107 @@
+name: Chrome Web Store
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      verify_api:
+        description: "Verify Chrome Web Store API access without uploading"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chrome-web-store-release
+  cancel-in-progress: false
+
+jobs:
+  package-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Validate extension files
+        shell: pwsh
+        run: |
+          $manifest = Get-Content -Raw -Encoding UTF8 manifest.json | ConvertFrom-Json
+          $scripts = $manifest.content_scripts.js | Sort-Object -Unique
+
+          foreach ($script in $scripts) {
+              if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
+                  throw "Content script '$script' does not exist."
+              }
+
+              node --check $script
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Syntax check failed for '$script'."
+              }
+          }
+
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $manifest = Get-Content -Raw -Encoding UTF8 manifest.json | ConvertFrom-Json
+          $tagVersion = $env:RELEASE_TAG -replace '^v', ''
+
+          if ($manifest.version -ne $tagVersion) {
+              throw "Tag version '$tagVersion' does not match manifest version '$($manifest.version)'."
+          }
+
+      - name: Package extension
+        shell: pwsh
+        run: ./scripts/package-extension.ps1 -OutputPath dist/fix-reva-site-plz.zip
+
+      - name: Save extension package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fix-reva-site-plz-${{ github.ref_name }}
+          path: dist/fix-reva-site-plz.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Authenticate to Google Cloud
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.verify_api == true
+        id: google-auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          credentials_json: ${{ secrets.CWS_SERVICE_ACCOUNT_JSON }}
+          service_account: ${{ vars.CWS_SERVICE_ACCOUNT_EMAIL }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+          create_credentials_file: false
+
+      - name: Verify Chrome Web Store API access
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.verify_api == true
+        shell: pwsh
+        env:
+          CWS_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+        run: |
+          ./scripts/publish-chrome-web-store.ps1 `
+              -AccessToken $env:CWS_ACCESS_TOKEN `
+              -PublisherId $env:CWS_PUBLISHER_ID `
+              -ExtensionId "kgajbbgpfmcjblmcggoggcelcfgjdbcp" `
+              -ValidateOnly
+
+      - name: Upload and publish extension
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          CWS_ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+        run: |
+          ./scripts/publish-chrome-web-store.ps1 `
+              -AccessToken $env:CWS_ACCESS_TOKEN `
+              -PublisherId $env:CWS_PUBLISHER_ID `
+              -ExtensionId "kgajbbgpfmcjblmcggoggcelcfgjdbcp" `
+              -PackagePath "dist/fix-reva-site-plz.zip"
