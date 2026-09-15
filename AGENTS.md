@@ -31,6 +31,7 @@ There is no build step, package manager, test runner, background worker, or opti
 - When adding polling or timers, provide a clear success/stop path and avoid creating duplicate intervals or unbounded parallel retry chains.
 - Never log PIN-code values, account data, or other user secrets in new code. Existing diagnostic logging may be made less sensitive when touched.
 - Avoid drive-by reformatting. These scripts are directly shipped files, so small, reviewable diffs are preferred.
+- Keep the README changelog high-level. Add entries only when a release introduces a new user-facing feature; omit bug fixes, hints, styling adjustments, and internal development or release tooling.
 
 ## Manifest and releases
 
