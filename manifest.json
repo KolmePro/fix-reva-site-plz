@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FIX REVA SITE PLZ!",
-  "version": "1.7",
+  "version": "1.8",
   "description": "Добавляет фиолетовые кнопки для удобной работы с сайтом revonline.ru и market.vkplay.ru.",
   "content_scripts": [
     {
@@ -25,7 +25,8 @@
         "https://revonline.ru/cart*"
       ],
       "js": [
-        "revonline-cart.js"
+        "revonline-cart.js",
+        "revonline-chests.js"
       ]
     },
     {

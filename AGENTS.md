@@ -12,6 +12,7 @@ There is no build step, package manager, test runner, background worker, or opti
 - `revonline-pins.js`: bulk PIN-code entry on `https://revonline.ru/pin`.
 - `revonline-collection.js`: automated card opening and prize selection on `https://revonline.ru/collection`.
 - `revonline-cart.js`: automatic six-item transfers on RevOnline cart URLs matching `https://revonline.ru/cart*`.
+- `revonline-chests.js`: opt-in sequential API opening of identical storage chests with the user's selected reward on the same cart URLs.
 - `revonline-atum.js`: bounded automatic Atum wheel spins, optional sequential API turbo mode, and aggregated reward reports on `https://revonline.ru/atum`.
 - `vkplay-pins.js`: PIN-code collection helpers on `https://market.vkplay.ru/*`.
 - `logo.png`: extension artwork; currently not referenced by the manifest.
@@ -50,6 +51,7 @@ Run syntax checks for every changed JavaScript file:
 node --check revonline-pins.js
 node --check revonline-collection.js
 node --check revonline-cart.js
+node --check revonline-chests.js
 node --check revonline-atum.js
 node --check vkplay-pins.js
 ```
@@ -73,6 +75,8 @@ Use the relevant manual checks:
 - Atum reward reports: update the list after each received prize in both modes, aggregate equal prizes/packs, count occurrences (not items inside each pack), and sort by ascending occurrence count with a Russian title tie-breaker. Do not show a separate confirmed-reward total; clear the previous list on a new run. Keep partial rewards after Stop/errors and explicitly flag unconfirmed final attempts only after stopping. Render server/DOM prize titles as text, never HTML. Verify both the ordinary DOM loop and turbo; use local API fixtures for automated checks without spending live tokens.
 - VK Play market: the panel appears once after dynamic rendering; existing buttons migrate into it; copying lists only visible/unused PINs; opening all PINs does not duplicate click handlers.
 - On every affected page, inspect the browser console for uncaught exceptions and verify that unrelated host-page controls still work.
+- Storage chests: one purple bulk checkbox appears in each chest dialog, off by default; caskets remain unchanged. With bulk disabled, the native Open action remains unchanged. With bulk enabled, capture Open before the native handler, require a selected reward for choice chests, and snapshot only current same-name chest IDs. Verify each chest's type and full item ID/title/count signature by GET before opening it by POST; different contents must not be opened. Freeze the user's choice, allow only one request in flight, and stop on errors/timeouts or changed page state except for the explicit HTTP 503 retry policy below. Stop/Escape waits for an in-flight response and prevents later opens. Reflect confirmed rewards in storage without changing the transfer queue; uncertain results require refresh. Test both choice and fixed-content chests using local fixtures, without opening real inventory during tests.
+- Chest HTTP 503 retries: wait 3 seconds before retrying, at most three retries per chest across its GET/POST requests. Before a POST retry, revalidate the same chest ID and full contents via GET, keeping the frozen choice. Do not delay successful openings or retry other HTTP errors, timeouts, network failures, invalid JSON, or rejected application responses. Stop/Escape/pagehide cancels the pending wait and prevents later requests. Keep an ambiguous POST result flagged until a successful opening is confirmed; stopping during the wait or failed revalidation after a POST requires refresh. Verify the retry limit, exact wait, no parallel requests, and unchanged progress for failed attempts with local fixtures.
 
 If the target site or authenticated test data is unavailable, report that limitation explicitly and state which static checks were completed.
 
