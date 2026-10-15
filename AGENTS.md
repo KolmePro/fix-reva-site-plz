@@ -12,6 +12,7 @@ There is no build step, package manager, test runner, background worker, or opti
 - `revonline-pins.js`: bulk PIN-code entry on `https://revonline.ru/pin`.
 - `revonline-collection.js`: automated card opening and prize selection on `https://revonline.ru/collection`.
 - `revonline-cart.js`: automatic six-item transfers on RevOnline cart URLs matching `https://revonline.ru/cart*`.
+- `revonline-atum.js`: bounded automatic Atum wheel spins, optional sequential API turbo mode, and aggregated reward reports on `https://revonline.ru/atum`.
 - `vkplay-pins.js`: PIN-code collection helpers on `https://market.vkplay.ru/*`.
 - `logo.png`: extension artwork; currently not referenced by the manifest.
 - `scripts/package-extension.ps1`: creates the minimal ZIP package uploaded to Chrome Web Store.
@@ -49,6 +50,7 @@ Run syntax checks for every changed JavaScript file:
 node --check revonline-pins.js
 node --check revonline-collection.js
 node --check revonline-cart.js
+node --check revonline-atum.js
 node --check vkplay-pins.js
 ```
 
@@ -65,6 +67,10 @@ Use the relevant manual checks:
 - RevOnline PIN page: the bulk-entry button appears once; empty input is rejected; PINs separated by spaces, commas, or newlines are processed sequentially; progress is updated and removed at completion.
 - RevOnline collection page: the control appears once inside the loaded iframe; start/stop works; prize selection is honored; confirmation dialogs do not create duplicate timers.
 - RevOnline cart page: the auto-transfer checkbox appears once below the transfer button; no transfer occurs below six queued items or while the button is disabled; a full queue is submitted and confirmed once; the success dialog closes using its close icon; disabling automation stops later actions.
+- RevOnline Atum page: one auto-spin button appears below Play in the loaded iframe without overlapping the token balance or purchase controls; the dialog defaults to the current maximum and accepts only whole amounts from 1 to that balance; minus/plus controls respect the limits without submitting the form; zero/unknown balance prevents starting. Start clicks Play once per attempt, waits for the prize popup, clicks its Continue once, and waits for it to close before the next spin; the chosen attempt limit is never exceeded (even if rewards increase the balance). Stop prevents all later clicks, including Continue; a spin already submitted to the site can still finish. Verify stopping on errors, timeouts, iframe replacement, and exhausted/unknown balance; no automatic buying or retrying failed spins. Cancel/Escape in the quantity dialog must not start automation.
+- Atum turbo mode: opt-in and off by default; validate the current game and balance through GET `/minigames/roulette/api/info`, then send sequential POST `/minigames/roulette/api/turn` requests with same-origin credentials and the site's CSRF header when present. At most one request may be in flight; require HTTP success, `state: "Success"`, a valid Atum balance, and a recognizable prize before proceeding. Never retry POST requests after errors, HTTP 429, malformed responses, or timeouts. Stop waits for an in-flight response to include its confirmed reward, then stops; block manual iframe interaction during turbo and reload only the same iframe afterward to sync Vue state. No extra host permissions or automatic purchases.
+- Atum turbo UI: the switch must show explicit on/off text and a purple enabled state, work with mouse/Space/Enter without submitting the form, and start off each time the dialog opens. Host-page checkbox styles must not hide the control.
+- Atum reward reports: update the list after each received prize in both modes, aggregate equal prizes/packs, count occurrences (not items inside each pack), and sort by ascending occurrence count with a Russian title tie-breaker. Do not show a separate confirmed-reward total; clear the previous list on a new run. Keep partial rewards after Stop/errors and explicitly flag unconfirmed final attempts only after stopping. Render server/DOM prize titles as text, never HTML. Verify both the ordinary DOM loop and turbo; use local API fixtures for automated checks without spending live tokens.
 - VK Play market: the panel appears once after dynamic rendering; existing buttons migrate into it; copying lists only visible/unused PINs; opening all PINs does not duplicate click handlers.
 - On every affected page, inspect the browser console for uncaught exceptions and verify that unrelated host-page controls still work.
 
