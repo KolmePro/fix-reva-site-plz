@@ -8,6 +8,7 @@
     const INIT_MARKER = 'data-violet-atum-initialized';
     const STEP_TIMEOUT = 45000;
     const POLL_DELAY = 200;
+    const RETRY_DELAY = 1000;
 
     if (document.documentElement.hasAttribute(INIT_MARKER)) return;
     document.documentElement.setAttribute(INIT_MARKER, '');
@@ -36,6 +37,15 @@
 
     function hasGameError() {
         return Boolean(findVisible('.aa__error, .mg-notify .error'));
+    }
+
+    function hasAutoSpinError(run) {
+        const errors = [...run.document.querySelectorAll('.aa__error, .mg-notify .error')].filter(isVisible);
+        for (const [element, text] of run.ignoredErrors || []) {
+            if (!errors.includes(element) || element.textContent !== text) run.ignoredErrors.delete(element);
+        }
+        return errors.some(element => element.matches('.aa__error') ||
+            run.ignoredErrors?.get(element) !== element.textContent);
     }
 
     function updateAutoSpinButton() {
@@ -113,7 +123,7 @@
         if (finished && run.rewardCount < run.submitted) {
             const warning = document.createElement('p');
             warning.style.cssText = 'margin: 10px 0 0; color: #ffb0b0;';
-            warning.textContent = 'Результат последней прокрутки не подтверждён и не включён в список. Проверьте его на сайте; повторный запрос не отправлялся.';
+            warning.textContent = 'Не все отправленные прокрутки подтверждены и включены в список. Проверьте результаты на сайте.';
             container.appendChild(warning);
         }
         container.scrollTop = scrollTop;
@@ -130,6 +140,7 @@
 
     function finishAutoSpin(message) {
         const run = activeRun;
+        if (run) cancelRetryWait(run);
         clearTimeout(runTimer);
         runTimer = null;
         activeRun = null;
@@ -178,6 +189,12 @@
             submitted: 0,
             completed: 0,
             phase: 'ready',
+            prizeRecorded: false,
+            retryPending: false,
+            retryWait: null,
+            reloading: false,
+            reloadUrl: null,
+            ignoredErrors: new Map(),
             deadline: Date.now() + STEP_TIMEOUT,
             nextSpinAt: 0
         };
@@ -212,23 +229,23 @@
                 });
             } catch {
                 throw new Error(controller.signal.aborted
-                    ? 'Истекло время ожидания ответа сервера. Турбо остановлено без повторного запроса.'
-                    : 'Не удалось получить ответ сервера. Турбо остановлено без повторного запроса.');
+                    ? 'Истекло время ожидания ответа сервера.'
+                    : 'Не удалось получить ответ сервера.');
             }
-            if (response.status === 429) throw new Error('Сервер ограничил частоту запросов. Турбо остановлено.');
-            if (!response.ok) throw new Error(`Сервер вернул ошибку HTTP ${response.status}. Турбо остановлено.`);
+            if (response.status === 429) throw new Error('Сервер ограничил частоту запросов.');
+            if (!response.ok) throw new Error(`Сервер вернул ошибку HTTP ${response.status}.`);
             let result;
             try {
                 result = await response.json();
             } catch {
                 throw new Error(controller.signal.aborted
-                    ? 'Истекло время ожидания ответа сервера. Турбо остановлено без повторного запроса.'
-                    : 'Сервер вернул непонятный ответ. Турбо остановлено без повторного запроса.');
+                    ? 'Истекло время ожидания ответа сервера.'
+                    : 'Сервер вернул непонятный ответ.');
             }
-            if (result?.state !== 'Success') throw new Error('Сервер не подтвердил действие. Турбо остановлено.');
+            if (result?.state !== 'Success') throw new Error('Сервер не подтвердил действие.');
             const data = result.data;
             if (data?.type !== 'atum' || !Number.isSafeInteger(data.user?.coins) || data.user.coins < 0) {
-                throw new Error('Не удалось проверить тип колеса или баланс в ответе сервера. Турбо остановлено.');
+                throw new Error('Не удалось проверить тип колеса или баланс в ответе сервера.');
             }
             return data;
         } finally {
@@ -241,7 +258,7 @@
     function recordServerReward(run, data) {
         const prize = data.user.lastResult;
         if (!prize || typeof prize.type !== 'string' || !prize.type.trim() || !Number.isSafeInteger(prize.id) || prize.id < 1) {
-            throw new Error('Не удалось распознать награду в ответе сервера. Турбо остановлено.');
+            throw new Error('Не удалось распознать награду в ответе сервера.');
         }
         const catalogPrize = Array.isArray(data.settings?.prizes)
             ? data.settings.prizes.find(item => item.id === prize.id && item.type === prize.type) : null;
@@ -251,55 +268,167 @@
         const rawCount = prize.count ?? catalogPrize?.count ?? 1;
         const count = typeof rawCount === 'number' || (typeof rawCount === 'string' && /^\d+$/.test(rawCount))
             ? Number(rawCount) : NaN;
-        if (!Number.isSafeInteger(count) || count < 1) throw new Error('В ответе сервера неизвестное количество наград. Турбо остановлено.');
+        if (!Number.isSafeInteger(count) || count < 1) throw new Error('В ответе сервера неизвестное количество наград.');
         // Считаем выпадения наборов, а не отдельные предметы внутри набора.
         addReward(run, JSON.stringify([prize.type, prize.id, count]), count > 1 ? `${title} ×${count}` : title);
     }
 
+    function cancelRetryWait(run) {
+        if (!run.retryWait) return;
+        clearTimeout(run.retryWait.timer);
+        run.retryWait.resolve(false);
+        run.retryWait = null;
+    }
+
+    async function waitForRetry(run, message) {
+        showRunStatus(`${message} Повтор через 1 секунду… Нажмите «Стоп», чтобы отменить.`);
+        const elapsed = await new Promise(resolve => {
+            run.retryWait = {
+                resolve,
+                timer: setTimeout(() => {
+                    run.retryWait = null;
+                    resolve(true);
+                }, RETRY_DELAY)
+            };
+        });
+        return elapsed && activeRun === run && !run.stopRequested;
+    }
+
     async function runTurbo(run) {
-        try {
-            if (!isCurrentRunPage(run)) throw new Error('Страница колеса изменилась. Турбо остановлено.');
-            // Проверяем серверный баланс и тип игры до первого платного действия.
-            let data = await requestTurboData(run, 'info', 'GET');
-            while (activeRun === run && !run.stopRequested && run.submitted < run.limit && data.user.coins > 0) {
-                if (!isCurrentRunPage(run)) throw new Error('Страница колеса изменилась. Турбо остановлено.');
-                if (hasGameError() || findVisible('.roulette__overlay')) throw new Error('Состояние страницы колеса изменилось. Турбо остановлено.');
+        let data = null;
+        while (activeRun === run && !run.stopRequested && run.completed < run.limit) {
+            if (!isCurrentRunPage(run)) {
+                finishAutoSpin('Страница колеса изменилась. Турбо остановлено.');
+                return;
+            }
+            if (findVisible('.roulette__overlay') && !hasGameError()) {
+                finishAutoSpin('Открыто другое окно колеса. Турбо остановлено.');
+                return;
+            }
+            try {
+                // До первого POST и после ошибок заново проверяем игру и серверный баланс.
+                if (!data) data = await requestTurboData(run, 'info', 'GET');
+                if (activeRun !== run || run.stopRequested) break;
+                if (!isCurrentRunPage(run)) {
+                    finishAutoSpin('Страница колеса изменилась. Турбо остановлено.');
+                    return;
+                }
+                if (data.user.coins < 1) break;
                 run.submitted++;
                 showRunStatus(`Турбо: ${run.completed} / ${run.limit}. Ожидаем ответ сервера…`);
-                // Только один запрос в полёте. Ни сетевые ошибки, ни тайм-ауты не повторяем.
+                // Повторяем только после завершения запроса и паузы; параллельных POST нет.
                 data = await requestTurboData(run, 'turn', 'POST');
                 if (activeRun !== run) return;
                 recordServerReward(run, data);
                 run.completed++;
+            } catch (error) {
+                if (activeRun !== run || run.stopRequested) break;
+                data = null;
+                if (!await waitForRetry(run, error instanceof Error ? error.message : 'Не удалось выполнить прокрутку.')) return;
             }
-            if (activeRun !== run) return;
-            finishAutoSpin(run.stopRequested ? run.stopMessage
-                : run.completed >= run.limit ? `Прокрутки завершены: ${run.completed} / ${run.limit}.`
-                    : `Жетоны закончились. Выполнено: ${run.completed} / ${run.limit}.`);
-        } catch (error) {
-            if (activeRun === run) finishAutoSpin(error instanceof Error ? error.message : 'Турбо остановлено из-за ошибки.');
         }
+        if (activeRun !== run) return;
+        finishAutoSpin(run.stopRequested ? run.stopMessage
+            : run.completed >= run.limit ? `Прокрутки завершены: ${run.completed} / ${run.limit}.`
+                : `Жетоны закончились. Выполнено: ${run.completed} / ${run.limit}.`);
+    }
+
+    function queueAutoSpinRetry(run, message) {
+        run.retryPending = true;
+        showRunStatus(`${message} Повтор через 1 секунду… Нажмите «Стоп», чтобы отменить.`);
+        runTimer = setTimeout(() => advanceAutoSpin(run), RETRY_DELAY);
+    }
+
+    function reloadWheelForRetry(run) {
+        // Штатная ошибка оставляет кнопку Vue заблокированной; сайт сам предлагает перезагрузку.
+        // Уже полученную награду сохраняем и учитываем, даже если окно не удалось закрыть.
+        if (run.prizeRecorded) {
+            run.completed++;
+            run.prizeRecorded = false;
+        }
+        if (run.completed >= run.limit) {
+            stopAutoSpin(`Прокрутки завершены: ${run.completed} / ${run.limit}.`);
+            return;
+        }
+        run.reloading = true;
+        run.reloadUrl = run.document.URL;
+        run.phase = 'ready';
+        run.deadline = Date.now() + STEP_TIMEOUT;
+        showRunStatus(`Автопрокрутка: ${run.completed} / ${run.limit}. Восстанавливаем колесо…`);
+        run.frame.contentWindow.location.reload();
+        runTimer = setTimeout(() => advanceAutoSpin(run), POLL_DELAY);
     }
 
     function advanceAutoSpin(run) {
         if (activeRun !== run) return;
         runTimer = null;
         try {
-            if (!run.frame?.isConnected || run.frame.contentDocument !== run.document || !run.game?.isConnected) {
+            if (run.reloading) {
+                let nextDocument = null;
+                try {
+                    nextDocument = run.frame?.contentDocument;
+                } catch {
+                    // При смене origin содержимое iframe больше недоступно.
+                }
+                if (run.frame !== activeFrame || !run.frame?.isConnected ||
+                    !nextDocument || nextDocument.URL !== run.reloadUrl) {
+                    stopAutoSpin('Страница колеса изменилась. Автопрокрутка остановлена.');
+                    return;
+                }
+                connectWheelDocument();
+                if (run.retryPending) {
+                    run.retryPending = false;
+                    reloadWheelForRetry(run);
+                    return;
+                }
+                const game = nextDocument !== run.document && nextDocument?.querySelector('.roulette__game');
+                const balance = getTokenBalance();
+                if (game && !hasGameError() && balance !== null && (balance === 0 || getReadyPlayButton())) {
+                    run.document = nextDocument;
+                    run.game = game;
+                    run.reloading = false;
+                    run.deadline = Date.now() + STEP_TIMEOUT;
+                } else {
+                    if ((nextDocument !== run.document && hasGameError()) || Date.now() > run.deadline) {
+                        queueAutoSpinRetry(run, 'Не удалось восстановить колесо.');
+                    } else runTimer = setTimeout(() => advanceAutoSpin(run), POLL_DELAY);
+                    return;
+                }
+            }
+            if (!isCurrentRunPage(run)) {
                 stopAutoSpin('Страница колеса изменилась. Автопрокрутка остановлена.');
                 return;
             }
-            if (hasGameError()) {
-                stopAutoSpin('Сайт сообщил об ошибке. Автопрокрутка остановлена; проверьте сообщение на странице.');
+            const overlay = findVisible('.roulette__overlay');
+            const prizePopup = overlay?.querySelector('.roulette__popup.prize');
+            if (run.retryPending) {
+                run.retryPending = false;
+                run.deadline = Date.now() + STEP_TIMEOUT;
+                // Уведомление об ошибке может оставаться видимым и после повторного клика.
+                // Сначала обрабатываем запоздалый выигрыш, если он всё же появился.
+                if ((findVisible('.aa__error') && (!prizePopup || run.prizeRecorded)) ||
+                    (!prizePopup && run.phase !== 'closing' && !getReadyPlayButton())) {
+                    reloadWheelForRetry(run);
+                    return;
+                }
+                if (run.phase === 'prize' && !overlay) run.phase = 'ready';
+                else if (run.phase === 'closing' && prizePopup) run.phase = 'prize';
+            } else if (hasAutoSpinError(run) && (run.phase === 'closing' ? prizePopup : !prizePopup)) {
+                queueAutoSpinRetry(run, 'Сайт сообщил об ошибке.');
                 return;
-            }
-            if (Date.now() > run.deadline) {
-                stopAutoSpin('Не удалось дождаться ответа колеса. Автопрокрутка остановлена; проверьте страницу перед повторным запуском.');
+            } else if (Date.now() > run.deadline && !prizePopup) {
+                queueAutoSpinRetry(run, 'Не удалось дождаться ответа колеса.');
+                return;
+            } else if (Date.now() > run.deadline && run.phase === 'closing') {
+                queueAutoSpinRetry(run, 'Не удалось закрыть окно выигрыша.');
                 return;
             }
 
-            const overlay = findVisible('.roulette__overlay');
-            if (overlay && !overlay.querySelector('.roulette__popup.prize')) {
+            if (overlay && !prizePopup) {
+                if (hasAutoSpinError(run)) {
+                    queueAutoSpinRetry(run, 'Сайт сообщил об ошибке.');
+                    return;
+                }
                 stopAutoSpin('Открыто другое окно колеса. Автопрокрутка остановлена.');
                 return;
             }
@@ -317,14 +446,18 @@
                 }
                 const playButton = getReadyPlayButton();
                 if (playButton && Date.now() >= run.nextSpinAt) {
-                    if (run.submitted >= run.limit) {
+                    if (run.completed >= run.limit) {
                         stopAutoSpin(`Прокрутки завершены: ${run.completed} / ${run.limit}.`);
                         return;
                     }
-                    // Резервируем одну попытку ДО клика. Не повторяем его при задержке ответа.
+                    // Отдельно учитываем отправки и подтверждённые прокрутки.
                     run.submitted++;
+                    run.prizeRecorded = false;
                     run.phase = 'prize';
                     run.deadline = Date.now() + STEP_TIMEOUT;
+                    // Старое уведомление не должно прерывать уже запущенную повторную прокрутку.
+                    run.ignoredErrors = new Map([...run.document.querySelectorAll('.mg-notify .error')]
+                        .filter(isVisible).map(element => [element, element.textContent]));
                     showRunStatus(`Автопрокрутка: ${run.completed} / ${run.limit}. Ожидание выигрыша…`);
                     playButton.click();
                 }
@@ -335,7 +468,10 @@
                 if (continueButton && !overlay.matches('.fade-enter-active, .fade-leave-active')) {
                     const prizeName = (overlay.querySelector('.image_block p')?.textContent
                         || overlay.querySelector('.jackpot_popup')?.textContent || '').replace(/\s+/g, ' ').trim();
-                    addReward(run, prizeName || `unknown-${run.submitted}`, prizeName || 'Награда без названия');
+                    if (!run.prizeRecorded) {
+                        addReward(run, prizeName || `unknown-${run.submitted}`, prizeName || 'Награда без названия');
+                        run.prizeRecorded = true;
+                    }
                     run.phase = 'closing';
                     run.deadline = Date.now() + STEP_TIMEOUT;
                     showRunStatus(`Автопрокрутка: ${run.completed} / ${run.limit}. Закрываем окно выигрыша…`);
@@ -343,7 +479,8 @@
                 }
             } else if (run.phase === 'closing' && !overlay) {
                 run.completed++;
-                if (run.submitted >= run.limit) {
+                run.prizeRecorded = false;
+                if (run.completed >= run.limit) {
                     stopAutoSpin(`Прокрутки завершены: ${run.completed} / ${run.limit}.`);
                     return;
                 }
@@ -353,7 +490,7 @@
                 showRunStatus(`Автопрокрутка: ${run.completed} / ${run.limit}. Подготовка…`);
             }
         } catch {
-            stopAutoSpin('Не удалось выполнить действие на странице. Автопрокрутка остановлена.');
+            queueAutoSpinRetry(run, 'Не удалось выполнить действие на странице.');
             return;
         }
         if (activeRun === run) runTimer = setTimeout(() => advanceAutoSpin(run), POLL_DELAY);
@@ -569,7 +706,10 @@
 
         wheelObserver?.disconnect();
         wheelObserver = null;
-        if (activeRun) stopAutoSpin('Страница колеса изменилась. Автопрокрутка остановлена.');
+        if (activeRun && !(activeRun.reloading && activeRun.frame === activeFrame &&
+            nextDocument && nextDocument.URL === activeRun.reloadUrl)) {
+            stopAutoSpin('Страница колеса изменилась. Автопрокрутка остановлена.');
+        }
         closeDialog();
         wheelDocument = nextDocument;
         if (!wheelDocument?.documentElement) return;
@@ -595,6 +735,7 @@
     window.addEventListener('pagehide', () => {
         if (activeRun) {
             activeRun.stopRequested = true;
+            cancelRetryWait(activeRun);
             activeRun.controller?.abort();
             if (activeRun.turbo) activeRun.frame.inert = activeRun.originalInert;
         }
